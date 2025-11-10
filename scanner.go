@@ -125,11 +125,8 @@ func startListening(listener int) {
 		if err == nil {
 			log.Printf("Ethernet Header: %+v\n", eth)
 			log.Printf("IPv4 Header: %+v\n", ip)
-			log.Printf("TCP Header: %+v\n", tcp)
+			log.Printf("TCP Header: %+v\n\n", tcp)
 		}
-		log.Printf("Ethernet Header: %+v\n", eth)
-		log.Printf("IPv4 Header: %+v\n", ip)
-		log.Printf("TCP Header: %+v\n\n", tcp)
 		// log.Printf("%q\n", buf)
 	}
 }
@@ -139,10 +136,13 @@ func parsePacket(data []byte) (EthernetHeader, IPv4Header, TCPHeader, error) {
 	var ip IPv4Header
 	var tcp TCPHeader
 	var ipVersionIHL uint8
+	var mask4b uint8 = 0x0F
 	binary.Read(bytes.NewReader(data[:14]), binary.BigEndian, &eth)
 	if eth.EthernetType == 0x0800 { // IPv4
 		binary.Read(bytes.NewReader(data[14:15]), binary.BigEndian, &ipVersionIHL)
-		length := int(ipVersionIHL % 4)
+		length := int(ipVersionIHL & mask4b)
+		log.Println(length)
+		length = 20 // placeholder for now
 		binary.Read(bytes.NewReader(data[14:14+length]), binary.BigEndian, &ip)
 		if ip.Protocol == 6 { // TCP
 			binary.Read(bytes.NewReader(data[14+length:54+length]), binary.BigEndian, &tcp)
