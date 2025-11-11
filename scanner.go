@@ -176,22 +176,22 @@ func parsePacket(data []byte) (EthernetHeader, IPv4Header, TCPHeader, error) {
 	var tcp TCPHeader
 	var ipVersionIHL uint8
 	var mask4b uint8 = 0x0F
+
 	binary.Read(bytes.NewReader(data[:14]), binary.BigEndian, &eth)
 	if eth.EthernetType != 0x0800 { // IPv4
 		return eth, ip, tcp, errors.New("Not a IPv4 Packet")
-	} else {
-		binary.Read(bytes.NewReader(data[14:15]), binary.BigEndian, &ipVersionIHL)
-		// get IHL and convert to amount of bytes in header
-		// as IHL is number of 32-bit words in header
-		length := int(ipVersionIHL&mask4b) * 4
-		binary.Read(bytes.NewReader(data[14:14+length]), binary.BigEndian, &ip)
-		if ip.Protocol != 6 { // TCP
-			return eth, ip, tcp, errors.New("Not a TCP Packet")
-		} else {
-			binary.Read(bytes.NewReader(data[14+length:14+length+20]), binary.BigEndian, &tcp)
-			return eth, ip, tcp, nil
-		}
 	}
-	// if not TCP, return nothing
 
+	binary.Read(bytes.NewReader(data[14:15]), binary.BigEndian, &ipVersionIHL)
+	// get IHL and convert to amount of bytes in header
+	// as IHL is number of 32-bit words in header
+	length := int(ipVersionIHL&mask4b) * 4
+
+	binary.Read(bytes.NewReader(data[14:14+length]), binary.BigEndian, &ip)
+	if ip.Protocol != 6 { // TCP
+		return eth, ip, tcp, errors.New("Not a TCP Packet")
+	}
+
+	binary.Read(bytes.NewReader(data[14+length:14+length+20]), binary.BigEndian, &tcp)
+	return eth, ip, tcp, nil
 }
