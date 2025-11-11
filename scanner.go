@@ -96,7 +96,7 @@ func main() {
 	log.Println()
 
 	// unpack address of reserved tcp port and start listening loop
-	startListening(listen, uint16(addr.(*syscall.SockaddrInet4).Port))
+	go startListening(listen, uint16(addr.(*syscall.SockaddrInet4).Port))
 
 	// time.Sleep(10 * time.Second)
 
@@ -125,6 +125,19 @@ func uint8ToFlags(flag uint8) Flags {
 		RST: flag&0x04 != 0,
 		SYN: flag&0x02 != 0,
 		FIN: flag&0x01 != 0,
+	}
+}
+
+// send TCP packet
+func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16, packet []byte) {
+	sockaddr := syscall.SockaddrInet4{
+		Port: 0,
+		Addr: destIP,
+	}
+	err := syscall.Sendto(sendSocket, packet, 0, &sockaddr)
+	if err != nil {
+		log.Panicln("Failed to send TCP packet:", err)
+		return
 	}
 }
 
