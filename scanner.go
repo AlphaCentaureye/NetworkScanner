@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"syscall"
-	"time"
 )
 
 type EthernetHeader struct {
@@ -33,11 +32,22 @@ type TCPHeader struct {
 	DestinationPort      uint16
 	SequenceNumber       uint32
 	AcknowledgmentNumber uint32
-	DataOffset           uint8
+	DataOffsetRes        uint8
 	Flags                uint8
 	WindowSize           uint16
 	Checksum             uint16
 	UrgentPointer        uint16
+}
+
+type Flags struct {
+	CWR bool
+	ECE bool
+	URG bool
+	ACK bool
+	PSH bool
+	RST bool
+	SYN bool
+	FIN bool
 }
 
 func main() {
@@ -64,7 +74,7 @@ func main() {
 	defer syscall.Close(socket)
 
 	// print the reserved address
-	log.Println(addr)
+	log.Printf("Listening on TCP Port: %d", uint16(addr.(*syscall.SockaddrInet4).Port))
 
 	// create socket to listen on
 	// htons is needed to convert ETH_P_ALL to network byte order
@@ -83,13 +93,12 @@ func main() {
 	}
 	defer syscall.Close(send)
 
-	log.Println(listen)
-	log.Println(send)
-
 	log.Println()
-	go startListening(listen)
 
-	time.Sleep(10 * time.Second)
+	// unpack address of reserved tcp port and start listening loop
+	startListening(listen, uint16(addr.(*syscall.SockaddrInet4).Port))
+
+	// time.Sleep(10 * time.Second)
 
 }
 
@@ -105,8 +114,22 @@ func htonsInt(i int) int {
 	return int(htons(uint16(i)))
 }
 
+// convert uint8 to Flags struct
+func uint8ToFlags(flag uint8) Flags {
+	return Flags{
+		CWR: flag&0x80 != 0,
+		ECE: flag&0x40 != 0,
+		URG: flag&0x20 != 0,
+		ACK: flag&0x10 != 0,
+		PSH: flag&0x08 != 0,
+		RST: flag&0x04 != 0,
+		SYN: flag&0x02 != 0,
+		FIN: flag&0x01 != 0,
+	}
+}
+
 // listening loop goroutine
-func startListening(listener int) {
+func startListening(listener int, listenPort uint16) {
 	buf := make([]byte, 1518) // max MTU byte size
 	for {
 		// Make a copy of buf so that we can modify it in the loop and the next iteration will get back the full slice.
@@ -123,9 +146,13 @@ func startListening(listener int) {
 
 		eth, ip, tcp, err := parsePacket(buf)
 		if err == nil {
-			log.Printf("Ethernet Header: %+v\n", eth)
-			log.Printf("IPv4 Header: %+v\n", ip)
-			log.Printf("TCP Header: %+v\n\n", tcp)
+			if tcp.DestinationPort == listenPort {
+				log.Printf("Listening on TCP Port: %d", listenPort)
+				log.Printf("Ethernet Header: %+v\n", eth)
+				log.Printf("IPv4 Header: %+v\n", ip)
+				log.Printf("TCP Header: %+v\n", tcp)
+				log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
+			}
 		}
 		// log.Printf("%q\n", buf)
 	}
@@ -140,12 +167,12 @@ func parsePacket(data []byte) (EthernetHeader, IPv4Header, TCPHeader, error) {
 	binary.Read(bytes.NewReader(data[:14]), binary.BigEndian, &eth)
 	if eth.EthernetType == 0x0800 { // IPv4
 		binary.Read(bytes.NewReader(data[14:15]), binary.BigEndian, &ipVersionIHL)
-		length := int(ipVersionIHL & mask4b)
-		log.Println(length)
-		length = 20 // placeholder for now
+		// get IHL and convert to amount of bytes in header
+		// as IHL is number of 32-bit words in header
+		length := int(ipVersionIHL&mask4b) * 4
 		binary.Read(bytes.NewReader(data[14:14+length]), binary.BigEndian, &ip)
 		if ip.Protocol == 6 { // TCP
-			binary.Read(bytes.NewReader(data[14+length:54+length]), binary.BigEndian, &tcp)
+			binary.Read(bytes.NewReader(data[14+length:14+length+20]), binary.BigEndian, &tcp)
 			return eth, ip, tcp, nil
 		}
 	}
