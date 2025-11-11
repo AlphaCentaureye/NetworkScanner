@@ -148,13 +148,12 @@ func startListening(listener int, listenPort uint16) {
 		if err == nil {
 			if tcp.DestinationPort == listenPort {
 				log.Printf("Listening on TCP Port: %d", listenPort)
-				log.Printf("Ethernet Header: %+v\n", eth)
+				log.Printf("Ethernet Header: {DestinationMAC:[% X] SourceMAC:[% X] EthernetType:0x%X}\n", eth.DestinationMAC, eth.SourceMAC, eth.EthernetType)
 				log.Printf("IPv4 Header: %+v\n", ip)
 				log.Printf("TCP Header: %+v\n", tcp)
 				log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
 			}
 		}
-		// log.Printf("%q\n", buf)
 	}
 }
 
