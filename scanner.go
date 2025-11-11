@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"log"
+	"math"
 	"syscall"
+	"time"
 )
 
 type EthernetHeader struct {
@@ -72,6 +74,7 @@ func main() {
 		log.Panicln("Failed to get socket name:", err)
 	}
 	defer syscall.Close(socket)
+	port := uint16(addr.(*syscall.SockaddrInet4).Port)
 
 	// print the reserved address
 	log.Printf("Listening on TCP Port: %d", uint16(addr.(*syscall.SockaddrInet4).Port))
@@ -96,9 +99,11 @@ func main() {
 	log.Println()
 
 	// unpack address of reserved tcp port and start listening loop
-	startListening(listen, uint16(addr.(*syscall.SockaddrInet4).Port))
+	go startListening(listen, port)
 
-	// time.Sleep(10 * time.Second)
+	sendPacket(send, [4]byte{120, 0, 0, 1}, 80, port)
+
+	time.Sleep(10 * time.Second)
 
 }
 
@@ -129,12 +134,44 @@ func uint8ToFlags(flag uint8) Flags {
 }
 
 // send TCP packet
-func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16, packet []byte) {
+func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
 	sockaddr := syscall.SockaddrInet4{
 		Port: int(destPort),
 		Addr: destIP,
 	}
-	err := syscall.Sendto(sendSocket, packet, 0, &sockaddr)
+
+	var packetbuf bytes.Buffer
+	binary.Write(&packetbuf, binary.BigEndian, IPv4Header{
+		VersionIHL:          4,
+		FlagsFragmentOffset: 2, // Don't Fragment flag
+		TTL:                 64,
+		Protocol:            6,
+		DestinationIP:       destIP,
+	})
+	binary.Write(&packetbuf, binary.BigEndian, TCPHeader{
+		SourcePort:      sourcePort,
+		DestinationPort: destPort,
+		SequenceNumber:  2 * uint32(math.Pow(10, 9)),
+		Flags:           2, // SYN flag
+		WindowSize:      65535,
+	})
+
+	//
+	data := packetbuf.Bytes()
+	var ip IPv4Header
+	var tcp TCPHeader
+
+	binary.Read(bytes.NewReader(data[:20]), binary.BigEndian, &ip)
+
+	binary.Read(bytes.NewReader(data[20:20+20]), binary.BigEndian, &tcp)
+
+	log.Printf("IPv4 Header: %+v\n", ip)
+	log.Printf("TCP Header: %+v\n", tcp)
+	log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
+
+	//
+
+	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
 	if err != nil {
 		log.Panicln("Failed to send TCP packet:", err)
 		return
