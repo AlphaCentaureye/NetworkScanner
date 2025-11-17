@@ -101,9 +101,9 @@ func main() {
 	// unpack address of reserved tcp port and start listening loop
 	go startListening(listen, port)
 
-	sendPacket(send, [4]byte{120, 0, 0, 1}, 80, port)
+	sendPacket(send, [4]byte{120, 0, 0, 1}, port, 80)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 }
 
@@ -156,7 +156,13 @@ func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint
 		WindowSize:      65535,
 	})
 
-	//
+	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
+	if err != nil {
+		log.Panicln("Failed to send TCP packet:", err)
+		return
+	}
+
+	// debugging start
 	data := packetbuf.Bytes()
 	var ip IPv4Header
 	var tcp TCPHeader
@@ -165,17 +171,15 @@ func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint
 
 	binary.Read(bytes.NewReader(data[20:20+20]), binary.BigEndian, &tcp)
 
+	log.Println("debugging")
 	log.Printf("IPv4 Header: %+v\n", ip)
 	log.Printf("TCP Header: %+v\n", tcp)
 	log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
 
-	//
+	// debugging end
 
-	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
-	if err != nil {
-		log.Panicln("Failed to send TCP packet:", err)
-		return
-	}
+	// more debugging
+	log.Println("finished running")
 }
 
 // listening loop goroutine
@@ -197,6 +201,7 @@ func startListening(listener int, listenPort uint16) {
 		eth, ip, tcp, err := parsePacket(buf)
 		if err == nil {
 			if tcp.DestinationPort == listenPort {
+				log.Println("TCP Packet Received")
 				log.Printf("Listening on TCP Port: %d", listenPort)
 				log.Printf("Ethernet Header: {DestinationMAC:[% X] SourceMAC:[% X] EthernetType:0x%X}\n", eth.DestinationMAC, eth.SourceMAC, eth.EthernetType)
 				log.Printf("IPv4 Header: %+v\n", ip)
