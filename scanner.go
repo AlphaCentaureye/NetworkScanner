@@ -101,7 +101,7 @@ func main() {
 	// unpack address of reserved tcp port and start listening loop
 	go startListening(listen, port)
 
-	sendPacket(send, [4]byte{120, 0, 0, 1}, port, 80)
+	sendPacket(send, [4]byte{120, 0, 0, 1}, 80, port)
 
 	time.Sleep(5 * time.Second)
 
@@ -133,53 +133,75 @@ func uint8ToFlags(flag uint8) Flags {
 	}
 }
 
+// calculate checksum for TCP header
+func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) uint16 {
+	var pseudoHeader []byte
+	buffer := bytes.Buffer{}
+	pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
+	pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
+	pseudoHeader = append(pseudoHeader, 0)                   // zero byte
+	pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
+	pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
+	binary.Write(&buffer, binary.BigEndian, tcpHeader)
+	dataToSum := append(pseudoHeader, buffer.Bytes()...)
+	dataToSum = append(dataToSum, data...) // append data if any
+
+	var sum uint32 // 32-bit sum to handle overflow --> then convert to 16-bit
+	for i := 0; i < len(dataToSum)-1; i += 2 {
+		word := uint16(dataToSum[i])<<8 | uint16(dataToSum[i+1]) // combine two bytes into one word (<< moves bits over to make room for next byte in word)
+		sum += uint32(word)
+		if sum > 0xFFFF {
+			sum = (sum & 0xFFFF) + (sum >> 16) // add overflow back into sum
+		}
+	}
+
+	if len(dataToSum)%2 != 0 { // if odd number of bytes, pad last byte with zero
+		sum += uint32(dataToSum[len(dataToSum)-1]) << 8
+		if sum > 0xFFFF {
+			sum = (sum & 0xFFFF) + (sum >> 16)
+		}
+	}
+
+	return ^uint16(sum) // one's complement
+}
+
 // send TCP packet
 func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
 	sockaddr := syscall.SockaddrInet4{
-		Port: int(destPort),
+		Port: int(htons(destPort)),
 		Addr: destIP,
 	}
 
 	var packetbuf bytes.Buffer
-	binary.Write(&packetbuf, binary.BigEndian, IPv4Header{
-		VersionIHL:          4,
+	ipHeader := IPv4Header{
+		VersionIHL:          0x45,
 		FlagsFragmentOffset: 2, // Don't Fragment flag
 		TTL:                 64,
 		Protocol:            6,
 		DestinationIP:       destIP,
-	})
-	binary.Write(&packetbuf, binary.BigEndian, TCPHeader{
+	}
+
+	tcpHeader := TCPHeader{
 		SourcePort:      sourcePort,
 		DestinationPort: destPort,
 		SequenceNumber:  2 * uint32(math.Pow(10, 9)),
+		DataOffsetRes:   0x50,
 		Flags:           2, // SYN flag
 		WindowSize:      65535,
-	})
+		Checksum:        0, // will be calculated later
+	}
+
+	// calculate checksum
+	tcpHeader.Checksum = calculateChecksum(ipHeader, tcpHeader, []byte{})
+
+	binary.Write(&packetbuf, binary.BigEndian, ipHeader)
+	binary.Write(&packetbuf, binary.BigEndian, tcpHeader)
 
 	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
 	if err != nil {
 		log.Panicln("Failed to send TCP packet:", err)
 		return
 	}
-
-	// debugging start
-	data := packetbuf.Bytes()
-	var ip IPv4Header
-	var tcp TCPHeader
-
-	binary.Read(bytes.NewReader(data[:20]), binary.BigEndian, &ip)
-
-	binary.Read(bytes.NewReader(data[20:20+20]), binary.BigEndian, &tcp)
-
-	log.Println("debugging")
-	log.Printf("IPv4 Header: %+v\n", ip)
-	log.Printf("TCP Header: %+v\n", tcp)
-	log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
-
-	// debugging end
-
-	// more debugging
-	log.Println("finished running")
 }
 
 // listening loop goroutine
