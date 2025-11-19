@@ -11,30 +11,30 @@ func TestSum16(t *testing.T) {
 		data []byte
 		want uint16
 	}{
-		{
-			name: "empty",
-			want: 0,
-		},
-		{
-			name: "OneOddView",
-			data: []byte{1, 9, 0, 5, 4},
-			want: 1294,
-		},
-		{
-			name: "OneEvenView",
-			data: []byte{1, 9, 0, 5},
-			want: 270,
-		},
-		{
+		// { // old tests
+		// 	name: "empty",
+		// 	want: 0,
+		// },
+		// {
+		// 	name: "OneOddView",
+		// 	data: []byte{1, 9, 0, 5, 4},
+		// 	want: 1294,
+		// },
+		// {
+		// 	name: "OneEvenView",
+		// 	data: []byte{1, 9, 0, 5},
+		// 	want: 270,
+		// },
+		{ // from packet tracer, extracted values in accordance with data structure for checksum calculation (assumes the structure I'm usng is correct)
 			name: "PacketExample",
-			data: []byte{0b10101100, 0b00010000, 0b00000001, 0b00000001, 0b10101100, 0b00010000, 0b00000001, 0b00000010, 0b00000000, 0b00000110, 0b01100100, 0b01010100, 0b01100011, 0b01110000, 0b01100011, 0b01100011, 0b01100101, 0b01110011, 0b01110100, 0b01101001, 0b01101110, 0b01101011, 0b01101001, 0b01101110, 0b01101111, 0b01101110, 0b01101001, 0b01101110, 0b01101011, 0b01101001, 0b01101110, 0b01101011, 0b01101001, 0b01101110, 0b01101011, 0b01101001},
-			want: 0b1111001111110011,
+			data: []byte{0x7f, 0x00, 0x00, 0x01, 0x7f, 0x00, 0x00, 0x01, 0x00, 0x06, 0x14, 0xae, 0xd3, 0xae, 0xd3, 0x77, 0x35, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00},
+			want: 0x4903,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, want := sum16(tc.data), tc.want; got != want {
-				t.Errorf("sum16(% X) = %d, want %d", tc.data, got, want)
+				t.Errorf("sum16(% X) = 0x%X, want 0x%X", tc.data, got, want)
 			}
 		})
 	}

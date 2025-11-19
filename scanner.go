@@ -128,9 +128,9 @@ func htonsInt(i int) int {
 }
 
 // converts byte order to big-endian
-func htonsIP(b [4]byte) [4]byte {
-	return [4]byte{b[3], b[2], b[1], b[0]}
-}
+// func htonsIP(b [4]byte) [4]byte {
+// 	return [4]byte{b[3], b[2], b[1], b[0]}
+// }
 
 // convert uint8 to Flags struct
 func uint8ToFlags(flag uint8) Flags {
@@ -270,7 +270,7 @@ func parsePacket(data []byte) (EthernetHeader, IPv4Header, TCPHeader, error) {
 
 	binary.Read(bytes.NewReader(data[:14]), binary.BigEndian, &eth)
 	if eth.EthernetType != 0x0800 { // IPv4
-		return eth, ip, tcp, errors.New("Not a IPv4 Packet")
+		return eth, ip, tcp, errors.New("not a ipv4 packet")
 	}
 
 	binary.Read(bytes.NewReader(data[14:15]), binary.BigEndian, &ipVersionIHL)
@@ -280,7 +280,7 @@ func parsePacket(data []byte) (EthernetHeader, IPv4Header, TCPHeader, error) {
 
 	binary.Read(bytes.NewReader(data[14:14+length]), binary.BigEndian, &ip)
 	if ip.Protocol != 6 { // TCP
-		return eth, ip, tcp, errors.New("Not a TCP Packet")
+		return eth, ip, tcp, errors.New("not a tcp packet")
 	}
 
 	binary.Read(bytes.NewReader(data[14+length:14+length+20]), binary.BigEndian, &tcp)
