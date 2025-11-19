@@ -146,6 +146,31 @@ func uint8ToFlags(flag uint8) Flags {
 	}
 }
 
+// checksum data to sum
+func checksumData(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) []byte {
+	// var pseudoHeader []byte
+	pseudoHeader := PseudoHeader{
+		SourceIP:      ipHeader.SourceIP,
+		DestinationIP: ipHeader.DestinationIP,
+		Zero:          0,
+		Protocol:      ipHeader.Protocol,
+		TCPLength:     uint16(20 + len(data)), // TCP header length + data length
+	}
+	buffer := bytes.Buffer{}
+	// pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
+	// pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
+	// pseudoHeader = append(pseudoHeader, 0)                   // zero byte
+	// pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
+	// pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
+	binary.Write(&buffer, binary.BigEndian, pseudoHeader)
+	binary.Write(&buffer, binary.BigEndian, tcpHeader)
+	// dataToSum := append(pseudoHeader, buffer.Bytes()...)
+	dataToSum := buffer.Bytes()
+	dataToSum = append(dataToSum, data...) // append data if any
+
+	return dataToSum
+}
+
 // chesum summation
 func sum16(dataToSum []byte) uint16 {
 	var sum uint32 // 32-bit sum to handle overflow --> then convert to 16-bit
@@ -169,27 +194,7 @@ func sum16(dataToSum []byte) uint16 {
 
 // calculate checksum for TCP header
 func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) uint16 {
-	// var pseudoHeader []byte
-	pseudoHeader := PseudoHeader{
-		SourceIP:      ipHeader.SourceIP,
-		DestinationIP: ipHeader.DestinationIP,
-		Zero:          0,
-		Protocol:      ipHeader.Protocol,
-		TCPLength:     uint16(20 + len(data)), // TCP header length + data length
-	}
-	buffer := bytes.Buffer{}
-	// pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
-	// pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
-	// pseudoHeader = append(pseudoHeader, 0)                   // zero byte
-	// pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
-	// pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
-	binary.Write(&buffer, binary.BigEndian, pseudoHeader)
-	binary.Write(&buffer, binary.BigEndian, tcpHeader)
-	// dataToSum := append(pseudoHeader, buffer.Bytes()...)
-	dataToSum := buffer.Bytes()
-	dataToSum = append(dataToSum, data...) // append data if any
-
-	return sum16(dataToSum)
+	return sum16(checksumData(ipHeader, tcpHeader, data))
 }
 
 // send TCP packet
