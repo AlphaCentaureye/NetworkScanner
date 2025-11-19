@@ -16,6 +16,14 @@ type EthernetHeader struct {
 	EthernetType   uint16
 }
 
+type PseudoHeader struct {
+	SourceIP      [4]byte
+	DestinationIP [4]byte
+	Zero          uint8
+	Protocol      uint8
+	TCPLength     uint16
+}
+
 type IPv4Header struct {
 	VersionIHL          uint8
 	TypeOfService       uint8
@@ -101,7 +109,7 @@ func main() {
 	// unpack address of reserved tcp port and start listening loop
 	go startListening(listen, port)
 
-	sendPacket(send, [4]byte{120, 0, 0, 1}, 80, port)
+	sendPacket(send, [4]byte{127, 0, 0, 1}, port, port)
 
 	time.Sleep(5 * time.Second)
 
@@ -119,6 +127,11 @@ func htonsInt(i int) int {
 	return int(htons(uint16(i)))
 }
 
+// converts byte order to big-endian
+func htonsIP(b [4]byte) [4]byte {
+	return [4]byte{b[3], b[2], b[1], b[0]}
+}
+
 // convert uint8 to Flags struct
 func uint8ToFlags(flag uint8) Flags {
 	return Flags{
@@ -133,19 +146,8 @@ func uint8ToFlags(flag uint8) Flags {
 	}
 }
 
-// calculate checksum for TCP header
-func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) uint16 {
-	var pseudoHeader []byte
-	buffer := bytes.Buffer{}
-	pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
-	pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
-	pseudoHeader = append(pseudoHeader, 0)                   // zero byte
-	pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
-	pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
-	binary.Write(&buffer, binary.BigEndian, tcpHeader)
-	dataToSum := append(pseudoHeader, buffer.Bytes()...)
-	dataToSum = append(dataToSum, data...) // append data if any
-
+// chesum summation
+func sum16(dataToSum []byte) uint16 {
 	var sum uint32 // 32-bit sum to handle overflow --> then convert to 16-bit
 	for i := 0; i < len(dataToSum)-1; i += 2 {
 		word := uint16(dataToSum[i])<<8 | uint16(dataToSum[i+1]) // combine two bytes into one word (<< moves bits over to make room for next byte in word)
@@ -165,17 +167,42 @@ func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) ui
 	return ^uint16(sum) // one's complement
 }
 
+// calculate checksum for TCP header
+func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) uint16 {
+	// var pseudoHeader []byte
+	pseudoHeader := PseudoHeader{
+		SourceIP:      ipHeader.SourceIP,
+		DestinationIP: ipHeader.DestinationIP,
+		Zero:          0,
+		Protocol:      ipHeader.Protocol,
+		TCPLength:     uint16(20 + len(data)), // TCP header length + data length
+	}
+	buffer := bytes.Buffer{}
+	// pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
+	// pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
+	// pseudoHeader = append(pseudoHeader, 0)                   // zero byte
+	// pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
+	// pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
+	binary.Write(&buffer, binary.BigEndian, pseudoHeader)
+	binary.Write(&buffer, binary.BigEndian, tcpHeader)
+	// dataToSum := append(pseudoHeader, buffer.Bytes()...)
+	dataToSum := buffer.Bytes()
+	dataToSum = append(dataToSum, data...) // append data if any
+
+	return sum16(dataToSum)
+}
+
 // send TCP packet
 func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
 	sockaddr := syscall.SockaddrInet4{
-		Port: int(htons(destPort)),
+		Port: int(destPort),
 		Addr: destIP,
 	}
 
 	var packetbuf bytes.Buffer
 	ipHeader := IPv4Header{
 		VersionIHL:          0x45,
-		FlagsFragmentOffset: 2, // Don't Fragment flag
+		FlagsFragmentOffset: 0x4000, // Don't Fragment flag
 		TTL:                 64,
 		Protocol:            6,
 		DestinationIP:       destIP,
