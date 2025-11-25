@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+const (
+	Reset  = "\033[0m"
+	Red    = "\033[31m"
+	Green  = "\033[32m"
+	Yellow = "\033[33m"
+	Blue   = "\033[34m"
+)
+
 type EthernetHeader struct {
 	DestinationMAC [6]byte
 	SourceMAC      [6]byte
@@ -112,7 +120,8 @@ func main() {
 	go startListening(listen, port)
 
 	// specify ip and port to send packet to
-	targetIP := [4]byte{127, 0, 0, 1}
+	targetIP := [4]byte{8, 8, 8, 8}
+	// targetIP := [4]byte{127, 0, 0, 1}
 	targetPort := uint16(443)
 
 	// get source ip address for checksum calculation
@@ -300,12 +309,25 @@ func startListening(listener int, listenPort uint16) {
 		eth, ip, tcp, err := parsePacket(buf)
 		if err == nil {
 			if tcp.DestinationPort == listenPort {
-				log.Println("TCP Packet Received")
-				log.Printf("Listening on TCP Port: %d", listenPort)
-				log.Printf("Ethernet Header: {DestinationMAC:[% X] SourceMAC:[% X] EthernetType:0x%X}\n", eth.DestinationMAC, eth.SourceMAC, eth.EthernetType)
-				log.Printf("IPv4 Header: %+v\n", ip)
-				log.Printf("TCP Header: %+v\n", tcp)
-				log.Printf("TCP Flags: %+v\n\n", uint8ToFlags(tcp.Flags))
+				if !(uint8ToFlags(tcp.Flags).SYN && uint8ToFlags(tcp.Flags).ACK) {
+					log.Println("TCP Packet Received")
+					log.Printf("Listening on TCP Port: %d", listenPort)
+					log.Printf("Ethernet Header: {DestinationMAC:[% X] SourceMAC:[% X] EthernetType:0x%X}\n", eth.DestinationMAC, eth.SourceMAC, eth.EthernetType)
+					log.Printf("IPv4 Header: %+v\n", ip)
+					log.Printf("TCP Header: %+v\n", tcp)
+					log.Printf("TCP Flags: %+v\n", uint8ToFlags(tcp.Flags))
+					log.Println("") // extra space for readability
+				} else {
+					log.Println("TCP Packet Received")
+					log.Printf("Listening on TCP Port: %d", listenPort)
+					log.Printf("Ethernet Header: {DestinationMAC:[% X] SourceMAC:[% X] EthernetType:0x%X}\n", eth.DestinationMAC, eth.SourceMAC, eth.EthernetType)
+					log.Printf("IPv4 Header: %+v\n", ip)
+					log.Printf("TCP Header: %+v\n", tcp)
+					// make SYN/ACK flags stand out if set
+					log.Printf("TCP Flags: "+Green+"%+v\n"+Reset, uint8ToFlags(tcp.Flags))
+					log.Println("") // extra space for readability
+				}
+
 			}
 		}
 	}
