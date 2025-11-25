@@ -98,7 +98,7 @@ func TestCalculateChecksum(t *testing.T) {
 	}
 
 	// test checksum data structure
-	got := calculateChecksum(ipHeader, tcpHeader, []byte{})
+	got := calculateChecksum(ipHeader, tcpHeader, nil)
 	const want = 0x4903
 
 	if got != want {

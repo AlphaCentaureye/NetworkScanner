@@ -69,7 +69,7 @@ func main() {
 
 	// bind the socket to an available port
 	if err := syscall.Bind(socket, &syscall.SockaddrInet4{
-		Port: 0,
+		Port: 44755,
 	}); err != nil {
 		syscall.Close(socket)
 		log.Panicln("Failed to bind TCP socket:", err)
@@ -146,6 +146,42 @@ func uint8ToFlags(flag uint8) Flags {
 	}
 }
 
+// get source ip
+func getSourceIP(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
+	sockaddr := syscall.SockaddrInet4{
+		Port: int(destPort),
+		Addr: destIP,
+	}
+
+	var packetbuf bytes.Buffer
+	ipHeader := IPv4Header{
+		VersionIHL:          0x45,
+		FlagsFragmentOffset: 0x4000, // Don't Fragment flag
+		TTL:                 64,
+		Protocol:            6,
+		DestinationIP:       destIP,
+	}
+
+	tcpHeader := TCPHeader{
+		SourcePort:      sourcePort,
+		DestinationPort: destPort,
+		SequenceNumber:  2 * uint32(math.Pow(10, 9)),
+		DataOffsetRes:   0x50,
+		Flags:           2, // SYN flag
+		WindowSize:      65535,
+		Checksum:        0, // will be calculated later
+	}
+
+	binary.Write(&packetbuf, binary.BigEndian, ipHeader)
+	binary.Write(&packetbuf, binary.BigEndian, tcpHeader)
+
+	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
+	if err != nil {
+		log.Panicln("Failed to send TCP packet:", err)
+		return
+	}
+}
+
 // checksum data to sum
 func checksumData(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) []byte {
 	// var pseudoHeader []byte
@@ -204,6 +240,14 @@ func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint
 		Addr: destIP,
 	}
 
+	sendAddr, er := syscall.Getsockname(sendSocket)
+	if er != nil {
+		log.Panicln("Failed to get send socket address:", er)
+		return
+	}
+
+	log.Println(sendAddr.(*syscall.SockaddrInet4).Addr)
+
 	var packetbuf bytes.Buffer
 	ipHeader := IPv4Header{
 		VersionIHL:          0x45,
@@ -211,6 +255,7 @@ func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint
 		TTL:                 64,
 		Protocol:            6,
 		DestinationIP:       destIP,
+		SourceIP:            sendAddr.(*syscall.SockaddrInet4).Addr,
 	}
 
 	tcpHeader := TCPHeader{
