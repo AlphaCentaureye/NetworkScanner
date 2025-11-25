@@ -69,7 +69,7 @@ func main() {
 
 	// bind the socket to an available port
 	if err := syscall.Bind(socket, &syscall.SockaddrInet4{
-		Port: 44755,
+		Port: 0,
 	}); err != nil {
 		syscall.Close(socket)
 		log.Panicln("Failed to bind TCP socket:", err)
@@ -106,10 +106,23 @@ func main() {
 
 	log.Println()
 
+	// begin packet sending and recieving
+
 	// unpack address of reserved tcp port and start listening loop
 	go startListening(listen, port)
 
-	sendPacket(send, [4]byte{127, 0, 0, 1}, port, port)
+	// specify ip and port to send packet to
+	targetIP := [4]byte{127, 0, 0, 1}
+	targetPort := uint16(443)
+
+	// get source ip address for checksum calculation
+	sourceIP, err := getSourceIP(targetIP, targetPort)
+	if err != nil {
+		log.Panicln("Failed to get source IP address:", err)
+	}
+
+	// send TCP packet to specified IP and port
+	sendPacket(send, targetIP, sourceIP, targetPort, port)
 
 	time.Sleep(5 * time.Second)
 
@@ -147,40 +160,35 @@ func uint8ToFlags(flag uint8) Flags {
 }
 
 // get source ip
-func getSourceIP(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
+func getSourceIP(destIP [4]byte, destPort uint16) ([4]byte, error) {
+	sockUDP, err1 := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
+	if err1 != nil {
+		log.Panicln("Failed to create UDP socket:", err1)
+		return [4]byte{}, err1
+	}
+	defer syscall.Close(sockUDP)
+
 	sockaddr := syscall.SockaddrInet4{
 		Port: int(destPort),
 		Addr: destIP,
 	}
 
-	var packetbuf bytes.Buffer
-	ipHeader := IPv4Header{
-		VersionIHL:          0x45,
-		FlagsFragmentOffset: 0x4000, // Don't Fragment flag
-		TTL:                 64,
-		Protocol:            6,
-		DestinationIP:       destIP,
+	err2 := syscall.Connect(sockUDP, &sockaddr)
+	if err2 != nil {
+		log.Panicln("Failed to connect UDP socket:", err2)
+		return [4]byte{}, err2
 	}
 
-	tcpHeader := TCPHeader{
-		SourcePort:      sourcePort,
-		DestinationPort: destPort,
-		SequenceNumber:  2 * uint32(math.Pow(10, 9)),
-		DataOffsetRes:   0x50,
-		Flags:           2, // SYN flag
-		WindowSize:      65535,
-		Checksum:        0, // will be calculated later
+	localAddr, err3 := syscall.Getsockname(sockUDP)
+	if err3 != nil {
+		log.Panicln("Failed to get UDP socket addr:", err3)
+		return [4]byte{}, err3
 	}
 
-	binary.Write(&packetbuf, binary.BigEndian, ipHeader)
-	binary.Write(&packetbuf, binary.BigEndian, tcpHeader)
-
-	err := syscall.Sendto(sendSocket, packetbuf.Bytes(), 0, &sockaddr)
-	if err != nil {
-		log.Panicln("Failed to send TCP packet:", err)
-		return
-	}
+	return localAddr.(*syscall.SockaddrInet4).Addr, nil
 }
+
+// udp socket, connect, getsockname
 
 // checksum data to sum
 func checksumData(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) []byte {
@@ -234,19 +242,11 @@ func calculateChecksum(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) ui
 }
 
 // send TCP packet
-func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint16) {
+func sendPacket(sendSocket int, destIP [4]byte, sourceIP [4]byte, destPort uint16, sourcePort uint16) {
 	sockaddr := syscall.SockaddrInet4{
 		Port: int(destPort),
 		Addr: destIP,
 	}
-
-	sendAddr, er := syscall.Getsockname(sendSocket)
-	if er != nil {
-		log.Panicln("Failed to get send socket address:", er)
-		return
-	}
-
-	log.Println(sendAddr.(*syscall.SockaddrInet4).Addr)
 
 	var packetbuf bytes.Buffer
 	ipHeader := IPv4Header{
@@ -255,7 +255,7 @@ func sendPacket(sendSocket int, destIP [4]byte, destPort uint16, sourcePort uint
 		TTL:                 64,
 		Protocol:            6,
 		DestinationIP:       destIP,
-		SourceIP:            sendAddr.(*syscall.SockaddrInet4).Addr,
+		SourceIP:            sourceIP,
 	}
 
 	tcpHeader := TCPHeader{
