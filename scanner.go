@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"flag"
 	"log"
 	"math"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -69,6 +72,14 @@ type Flags struct {
 }
 
 func main() {
+	// parse command line flags
+	targetIPFlag := flag.String("ip", "127.0.0.1", "Target IP address to send TCP packet to")
+	targetPortFlag := flag.Uint("port", 80, "Target port to send TCP packet to")
+	flag.Parse()
+
+	targetIP := ipStringToBytes(*targetIPFlag)
+	targetPort := uint16(*targetPortFlag)
+
 	// create a TCP socket
 	socket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, syscall.IPPROTO_TCP)
 	if err != nil {
@@ -120,9 +131,9 @@ func main() {
 	go startListening(listen, port)
 
 	// specify ip and port to send packet to
-	targetIP := [4]byte{8, 8, 8, 8}
+	// targetIP := [4]byte{8, 8, 8, 8}
 	// targetIP := [4]byte{127, 0, 0, 1}
-	targetPort := uint16(443)
+	// targetPort := uint16(443)
 
 	// get source ip address for checksum calculation
 	sourceIP, err := getSourceIP(targetIP, targetPort)
@@ -135,6 +146,21 @@ func main() {
 
 	time.Sleep(5 * time.Second)
 
+}
+
+// int to byte
+func atoi(s string) int {
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		log.Panicln("Failed to convert string to int:", err)
+	}
+	return i
+}
+
+// ip string to byte array
+func ipStringToBytes(ip string) [4]byte {
+	ipArr := strings.Split(ip, ".")
+	return [4]byte{byte(atoi(ipArr[0])), byte(atoi(ipArr[1])), byte(atoi(ipArr[2])), byte(atoi(ipArr[3]))}
 }
 
 // htons converts a uint16 from host to network byte order
@@ -210,14 +236,8 @@ func checksumData(ipHeader IPv4Header, tcpHeader TCPHeader, data []byte) []byte 
 		TCPLength:     uint16(20 + len(data)), // TCP header length + data length
 	}
 	buffer := bytes.Buffer{}
-	// pseudoHeader = append(pseudoHeader, ipHeader.SourceIP[:]...)
-	// pseudoHeader = append(pseudoHeader, ipHeader.DestinationIP[:]...)
-	// pseudoHeader = append(pseudoHeader, 0)                   // zero byte
-	// pseudoHeader = append(pseudoHeader, ipHeader.Protocol)   // protocol
-	// pseudoHeader = append(pseudoHeader, uint8(20+len(data))) // TCP length (header + data))
 	binary.Write(&buffer, binary.BigEndian, pseudoHeader)
 	binary.Write(&buffer, binary.BigEndian, tcpHeader)
-	// dataToSum := append(pseudoHeader, buffer.Bytes()...)
 	dataToSum := buffer.Bytes()
 	dataToSum = append(dataToSum, data...) // append data if any
 
