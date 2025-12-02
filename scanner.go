@@ -130,11 +130,6 @@ func main() {
 	// unpack address of reserved tcp port and start listening loop
 	go startListening(listen, port)
 
-	// specify ip and port to send packet to
-	// targetIP := [4]byte{8, 8, 8, 8}
-	// targetIP := [4]byte{127, 0, 0, 1}
-	// targetPort := uint16(443)
-
 	// get source ip address for checksum calculation
 	sourceIP, err := getSourceIP(targetIP, targetPort)
 	if err != nil {
